@@ -1,0 +1,38 @@
+# 第一版未数字化数据处理的文件 v1
+# author: Han Jintao
+
+#############################################################
+train.txt 文件说明
+
+train.txt 来源于原始数据的train.txt,经过goal,situation等的处理后
+获得的文件
+
+每一行代表一个轮次对话及其所需要的信息, 不同的对话之间以一个空行分开
+
+role, response, goal_tag, current_goal, first_goal, final_goal, processed_goals, knowledge, situation, usr_prof
+
+
+其格式为:
+role: 对话角色
+response: 当前对话内容
+goal_tag: 标注当前对话内容是否是一个goal的开始
+current_goal: 当前对话的目标, 使用中颗粒度的goal
+first_goal: g0第一个目标,格式为 [goal类别, 实体]
+final_goal: gL-1第L-1个目标个目标, 
+goals: 整个对话的目标序列, 格式为 [goal类别, 实体]
+knowledge: 知识,SPO的列表形式
+situation: 对话状况, 为五元组 ("date", "workday", "time", "location", "theme")(日期, 周几, 时间, 地点, 对话主题)
+usr_prof: 用户情况, 格式为字典, 记录用户的情况,
+键
+
+
+使用方法: 见demo
+
+#############################################################
+goals_dict.json 
+目前把goal的类别细分为38种，每一个类别都会对应一个中细粒度的模板，
+键：goal_type，值：中颗粒度的goal_tmp
+
+#############################################################
+entities_set
+goal中实体的种类
