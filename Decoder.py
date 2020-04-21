@@ -20,33 +20,33 @@ from functools import partial
 
 from transformer_encoder import decoder
 from batch_generator import Dataset
-from utils import set_base, log
+from utils import set_base, log, read_json, json_saver,find_name_enc, find_name_dec
 
 #################################################################################
-# 参数部分
+# Model Parameter
 HIDDEN_SIZE = 768
 NUM_HIDDEN_LAYERS = 6
 NUM_ATTENTION_HEADS = 6
 VOCAB_SIZE = 15416
 MAX_POSITION_EMBEDDINGS = 512
-TYPE_VOCAB_SIZE = 60
+TYPE_VOCAB_SIZE = 47
 HIDDEN_ACT = 'relu'
 HIDDEN_DROPOUT_PROB = 0.
 ATTENTION_PROBS_DROPOUT_PROB = 0.
 GOAL_TYPE_NUM = 39
 GOAL_ENTITY_NUM = 656
 KNOWLEDGE_S_NUM = 656
-KNOWLEDGE_P_NUM = 57
+KNOWLEDGE_P_NUM = 56
+SEQ_MAX_LEN = 512
 #################################################################################
 # Train Parameters
-SEQ_MAX_LEN = 512
 BATCH_SIZE = 1
 EPOCH_NUM = 5
 PRINT_BATCH = 10
 SAVE_BATCH = 100
 LOAD_PERSISTABLE = False
 LOAD_PERSISTABLE_FILE = "dec_model_epoch_4_batch_900.pers"
-LOAD_VARS = True
+LOAD_VARS = False
 LOAD_VARS_FILE = "dec_model_epoch_4_batch_1300.vars"
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
@@ -56,6 +56,39 @@ USE_CUDA = False
 
 ###########################################################################
 
+
+class Model_Config():
+    def __init__(self, filename=None):
+        if not filename:
+            self.config = {
+                "HIDDEN_SIZE":HIDDEN_SIZE,
+                "NUM_HIDDEN_LAYERS" :NUM_HIDDEN_LAYERS,
+                "NUM_ATTENTION_HEADS" :NUM_ATTENTION_HEADS,
+                "VOCAB_SIZE" :VOCAB_SIZE,
+                "MAX_POSITION_EMBEDDINGS" :MAX_POSITION_EMBEDDINGS,
+                "TYPE_VOCAB_SIZE" :TYPE_VOCAB_SIZE,
+                "HIDDEN_ACT" :HIDDEN_ACT,
+                "HIDDEN_DROPOUT_PROB" :HIDDEN_DROPOUT_PROB,
+                "ATTENTION_PROBS_DROPOUT_PROB" :ATTENTION_PROBS_DROPOUT_PROB,
+                "GOAL_TYPE_NUM" :GOAL_TYPE_NUM,
+                "GOAL_ENTITY_NUM" :GOAL_ENTITY_NUM,
+                "KNOWLEDGE_S_NUM" :KNOWLEDGE_S_NUM,
+                "KNOWLEDGE_P_NUM" :KNOWLEDGE_P_NUM,
+                "SEQ_MAX_LEN" :SEQ_MAX_LEN
+            }
+        else:
+            self.config = self._read(filename)
+
+    def __getitem__(self, key):
+        return self.config[key]
+
+    def _read(self, filename):
+        return read_json(filename)
+
+    def save(self,filename):
+        json_saver(self.config, filename)
+
+
 class Decoder(object):
     def __init__(self,
                  src_ids,
@@ -64,35 +97,38 @@ class Decoder(object):
                  input_mask,
                  enc_input,
                  enc_input_mask,
+                 config:Model_Config,
                  weight_sharing=True,
                  cache=None,
                  use_fp16=False):
-        self._emb_size = HIDDEN_SIZE
-        self._n_layer = NUM_HIDDEN_LAYERS
-        self._n_head = NUM_ATTENTION_HEADS
-        self._voc_size = VOCAB_SIZE
-        self._max_position_seq_len = MAX_POSITION_EMBEDDINGS
-        self._sent_types = TYPE_VOCAB_SIZE
-        self._hidden_act = HIDDEN_ACT
-        self._prepostprocess_dropout = HIDDEN_DROPOUT_PROB
-        self._attention_dropout = ATTENTION_PROBS_DROPOUT_PROB
+        self._emb_size = config["HIDDEN_SIZE"]
+        self._n_layer =config["NUM_HIDDEN_LAYERS"]
+        self._n_head =config["NUM_ATTENTION_HEADS"]
+        self._voc_size = config["VOCAB_SIZE"]
+        self._max_position_seq_len = config["MAX_POSITION_EMBEDDINGS"]
+        self._sent_types = config["TYPE_VOCAB_SIZE"]
+        self._hidden_act = config['HIDDEN_ACT']
+        self._prepostprocess_dropout = config["HIDDEN_DROPOUT_PROB"]
+        self._attention_dropout = config["ATTENTION_PROBS_DROPOUT_PROB"]
         self._weight_sharing = weight_sharing
+
+        # name
+        self.decoder_name = "decoder"
 
         self._word_emb_name = "enc_word_embedding"
         self._pos_emb_name = "enc_pos_embedding"
-        self._seg_emb_name = "enc_seg_embedding"
+        self._seg_emb_name = self.decoder_name + "dec_seg_embedding"
 
         self._dtype = "float32"
         self._inttype = 'int32'
 
         # task parameters
-        self.goal_type_num = GOAL_TYPE_NUM
-        self.goal_entity_num = GOAL_ENTITY_NUM
-        self.knowledge_s_num = KNOWLEDGE_S_NUM
-        self.knowledge_p_num = KNOWLEDGE_P_NUM
+        self.goal_type_num = config["GOAL_TYPE_NUM"]
+        self.goal_entity_num = config["GOAL_ENTITY_NUM"]
+        self.knowledge_s_num = config["KNOWLEDGE_S_NUM"]
+        self.knowledge_p_num = config["KNOWLEDGE_P_NUM"]
 
-        # name
-        self.decoder_name = "decoder"
+
 
         # parameter
         self.pos_embed = Dataset.get_position_embed(SEQ_MAX_LEN, HIDDEN_SIZE)
@@ -119,7 +155,7 @@ class Decoder(object):
             size=[self._voc_size, self._emb_size],
             dtype=self._dtype,
             param_attr=fluid.ParamAttr(
-                name=self._word_emb_name),  # , initializer=self._param_initializer),
+                name=self._word_emb_name),
             is_sparse=False)
 
         position_emb_out = fluid.embedding(
@@ -223,10 +259,10 @@ class Decoder(object):
         tgt_output = fluid.layers.fc(self.get_sequence_output(),
                                      size=self._voc_size,
                                      num_flatten_dims=2,
-                                     param_attr=fluid.ParamAttr(name=self.decoder_name + name + "_w"),
-                                     bias_attr=fluid.ParamAttr(name=self.decoder_name + name + "_b"))
+                                     param_attr=fluid.ParamAttr(name=name + "_w"),
+                                     bias_attr=fluid.ParamAttr(name=name + "_b"))
         # loss_nll [batch_size, max_len, 1]
-        tgt_output = fluid.layers.softmax(tgt_output, use_cudnn=USE_CUDA)
+        tgt_output = fluid.layers.softmax(tgt_output, use_cudnn=USE_CUDA,name=name+"softmax")
         loss_nll = fluid.layers.cross_entropy(tgt_output, lm_label_arr)
         # loss_nll [batch_size, max_len]
         loss_nll = fluid.layers.reshape(loss_nll, shape=[BATCH_SIZE, SEQ_MAX_LEN])
@@ -239,8 +275,8 @@ class Decoder(object):
         loss_nll /= BATCH_SIZE
         return loss_nll
 
-    def pretrain(self, goal_type_pos, goal_type_label, lm_label_arr,
-                 lm_pos_mask, lm_pos_len):
+    def pretrain(self, goal_type_pos, goal_type_label,
+                 lm_label_arr, lm_pos_mask, lm_pos_len):
         """
 
         :param goal_type_pos:
@@ -256,14 +292,34 @@ class Decoder(object):
         return loss, acc_goal_type
 
 
+def check_params(dataset:Dataset):
+    params = dataset.get_params()
+    assert VOCAB_SIZE == params["VOCAB_SIZE"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("VOCAB_SIZE", params["VOCAB_SIZE"], VOCAB_SIZE)
+    assert GOAL_TYPE_NUM == params["GOAL_TYPE_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("GOAL_TYPE_NUM", params["GOAL_TYPE_NUM"], GOAL_TYPE_NUM)
+    assert GOAL_ENTITY_NUM == params["GOAL_ENTITY_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("GOAL_ENTITY_NUM", params["GOAL_ENTITY_NUM"], GOAL_ENTITY_NUM)
+    assert KNOWLEDGE_S_NUM == params["KNOWLEDGE_S_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("KNOWLEDGE_S_NUM", params["KNOWLEDGE_S_NUM"], KNOWLEDGE_S_NUM)
+    assert KNOWLEDGE_P_NUM == params["KNOWLEDGE_P_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("KNOWLEDGE_P_NUM", params["KNOWLEDGE_P_NUM"], KNOWLEDGE_P_NUM)
+    assert TYPE_VOCAB_SIZE == params["TYPE_VOCAB_SIZE"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
+                                               ("TYPE_VOCAB_SIZE", params["TYPE_VOCAB_SIZE"], TYPE_VOCAB_SIZE)
+    check_info = "Parameter checked."
+    print(check_info)
+    return check_info
+
+
 def fine_tunning():
-    ###########################################################################
+
     # logging tools
     tgt_base_dir = set_base(__file__)
     LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
     DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
     log_filename = os.path.join(tgt_base_dir, "dec_pre_training.log")
     logger = log(log_filename)
+    config = Model_Config()
 
     # define program
     train_prog = fluid.Program()
@@ -286,7 +342,8 @@ def fine_tunning():
         enc_input = fluid.layers.fill_constant(shape=[BATCH_SIZE, SEQ_MAX_LEN, HIDDEN_SIZE], dtype='float32', value=0.0)
         enc_mask = fluid.layers.fill_constant(shape=[BATCH_SIZE, SEQ_MAX_LEN, SEQ_MAX_LEN], dtype='float32', value=0.0)
 
-        decode = Decoder(token_ids, pos_ids, segment_ids, enc_slf_attn, enc_input=enc_input, enc_input_mask=enc_mask)
+        decode = Decoder(token_ids, pos_ids, segment_ids, enc_slf_attn,
+                         config=config, enc_input=enc_input, enc_input_mask=enc_mask)
         # output, loss, acc = decode.mask_goal_type(goal_type_pos, goal_type_label)
         loss, goal_type_acc = decode.pretrain(goal_type_pos, goal_type_label, lm_label_mat, lm_pos_mask, lm_pos_len)
         # loss = decode.lm_task(lm_label_mat, lm_pos_mask, lm_pos_len)
@@ -320,7 +377,7 @@ def fine_tunning():
         try:
             print("begin to load %s"% (LOAD_VARS_FILE))
             fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_VARS_FILE,
-                                   predicate=lambda var: isinstance(var, fluid.framework.Parameter))
+                                   predicate=find_name_dec)
 
             info_msg = "Load %s success!" % (LOAD_VARS_FILE)
             logger.info(info_msg)
@@ -330,6 +387,8 @@ def fine_tunning():
             logger.error(load_error)
 
     # show the information
+    check_params(dataset)
+
     start_time = time.time()
     recoder = time.time()
     logger.info("Begin trainning")
@@ -385,6 +444,6 @@ def fine_tunning():
                     del_msg = "delete the model file %s." % (delete_file)
                     logger.info(del_msg)
 
-
+###########################################################################
 if __name__ == '__main__':
     fine_tunning()

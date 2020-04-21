@@ -514,7 +514,7 @@ def decoder(dec_input,
         dec_input = dec_output
     dec_output = pre_process_layer(dec_output, preprocess_cmd,
                                    prepostprocess_dropout,
-                                   name='post_decoder')
+                                   name=name+'post_decoder')
     return dec_output
 
 if __name__ == '__main__':

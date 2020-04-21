@@ -303,7 +303,7 @@ class Dataset():
         assert len(tokens_list) == len(segment_list), "tokens_list and segment_list must have the same length"
         seq_len = len(tokens_list)
         mask_token_list = [self.word2idx.get(item, self.UNK_id) for item in tokens_list]
-        new_segment_list = [self.segtype2id.get(item) for item in segment_list]
+        new_segment_list = [self.segtype2id[item] for item in segment_list]
         pos_list = list(range(1, seq_len+1))
         if pad:
             mask_token_list += [self.PAD_id] * (max_len - seq_len)
@@ -641,7 +641,6 @@ class Dataset():
         :param raw_item:
         :return:
         """
-
         token_list = []
         segment_list = []
         bot_range_list = []
@@ -662,7 +661,6 @@ class Dataset():
                 bot_range_list.append((base, base+bot_length))
         assert len(token_list) == len(segment_list)
         return token_list, segment_list, bot_range_list
-
 
     def generate_dec_pretrain_batch(self, batch_size=32, pad=True, max_len=SEQ_MAX_LEN, shuffle=True):
         """
@@ -723,7 +721,7 @@ class Dataset():
                 lm_mask_ids = np.where(lm_mask_arr == 1)
                 res_lm_label_arr = np.zeros((token_id_arr.shape))
                 res_lm_label_arr[lm_mask_ids[0], lm_mask_ids[1]] = token_id_arr[lm_mask_ids[0], lm_mask_ids[1] + 1]
-
+                res_lm_label_arr = np.array(res_lm_label_arr, dtype=np.int64)
 
                 yield token_id_arr, segment_id_arr, pos_arr, slf_attn_mask_arr, \
                       lm_mask_arr, response_length_arr, res_lm_label_arr
@@ -745,11 +743,53 @@ class Dataset():
         cheak_label_arr = np.zeros((token_id_arr.shape))
         cheak_label_arr[lm_mask_ids[0],lm_mask_ids[1]] = token_id_arr[lm_mask_ids[0],lm_mask_ids[1]+1]
 
-        np.any(cheak_labels!=lm_lable_arr)
-
-
         return src_token
 
+    def get_enc_dec_mask(self, enc_len_arr, dec_len_arr, max_len=SEQ_MAX_LEN):
+        """
+
+        :param dec_len_arr:
+        :return:
+        """
+        assert len(enc_len_arr) == len(dec_len_arr),\
+            "the encoder batch size should equal to decoder batch size"
+        batch_size = len(enc_len_arr)
+        enc_dec_mask_arr = np.zeros((batch_size, max_len, max_len))
+        for batch_id, (enc_len, dec_len) in enumerate(zip(enc_len_arr, dec_len_arr)):
+            enc_dec_mask_arr[batch_id, 0:dec_len, 0:enc_len] = 1
+        return enc_dec_mask_arr
+
+    def generate_fine_tunning_batch(self, batch_size=32, pad=True, max_len=SEQ_MAX_LEN, shuffle=True):
+        """
+
+        :param batch_size:
+        :param pad:
+        :param max_len:
+        :param shuffle:
+        :return:
+        """
+        enc_gen = self.generate_enc_batch(batch_size, pad=pad, max_len=max_len, shuffle=shuffle)
+        dec_gen = self.generate_dec_batch(batch_size, pad=pad, max_len=max_len, shuffle=shuffle)
+        for enc_batch, dec_batch in zip(enc_gen, dec_gen):
+            enc_token_arr, enc_segment_arr, enc_pos_list_arr, enc_seq_len_arr, \
+            enc_goal_type_pos, enc_goal_entity_pos, enc_knowledge_s_pos, enc_knowledge_p_pos, \
+            enc_goal_type_label, enc_goal_entity_label, enc_knowledge_s_label, enc_knowledge_p_label = enc_batch
+
+            dec_token_id_arr, dec_segment_id_arr, dec_pos_arr, dec_slf_attn_mask_arr, \
+            dec_lm_mask_arr, dec_res_len_arr, dec_res_lm_label_arr,\
+            goal_pos, goal_type_list = dec_batch
+
+            enc_len_arr = np.sum(enc_token_arr>0, axis=1)
+            dec_len_arr = np.sum(dec_token_id_arr>0, axis=1)
+
+            assert len(enc_len_arr) == len(dec_len_arr), \
+                "the encoder batch size should equal to decoder batch size"
+
+            enc_dec_input_mask = self.get_enc_dec_mask(enc_len_arr, dec_len_arr)
+
+            yield  enc_token_arr, enc_segment_arr, enc_pos_list_arr, enc_seq_len_arr, \
+                   dec_token_id_arr, dec_segment_id_arr, dec_pos_arr, dec_slf_attn_mask_arr, enc_dec_input_mask, \
+                   dec_res_lm_label_arr, dec_lm_mask_arr, dec_res_len_arr, goal_pos, goal_type_list
 
     @staticmethod
     def get_position_embed(max_seq_len=SEQ_MAX_LEN, d_model=768):
@@ -769,18 +809,10 @@ class Dataset():
         # np.save(fliename, position_encoding)
         return position_encoding
 
-
-
-
-
-
-
-
-
 if __name__ == '__main__':
 
 
-    dataset = Dataset(limit=10)
+    dataset = Dataset()
     raw_data = dataset.raw_dataset
     example = raw_data[1][0]
     raw_item = Raw_data(*example)
@@ -789,9 +821,11 @@ if __name__ == '__main__':
     mask_token_list, label, mask_pos = dataset.mask_enc(token_list, segment_list)
     mask_token_list, new_segment_list, pos_list, seq_len = dataset.convert_seg_token_into_id(mask_token_list, segment_list)
     label_id = dataset._parse_label([label])
-    gen = dataset.generate_enc_batch()
-    batch = next(gen)
-    len_list = []
+
+    gen = dataset.generate_enc_batch(32)
+    for batch in gen:
+        pass
+
 
     bot_item = dataset.bot_dial[0]
     token_list, segment_list, response, res_pos, next_goal, next_goal_pos = dataset.get_dec_item(bot_item)
@@ -807,9 +841,7 @@ if __name__ == '__main__':
     example = dataset.whole_dial[0]
     token_list, segment_list, range_list = dataset.get_history(example)
 
-
-
-    dataset = Dataset(limit=None)
+    # test
     gen = dataset.generate_dec_pretrain_batch(32)
     batch = next(gen)
     token_id_arr, segment_id_arr, pos_arr, slf_attn_mask_arr, \
@@ -821,46 +853,3 @@ if __name__ == '__main__':
             print("error")
     end = time.time()
     print("a epoch cost %d s"%(end-start))
-    # dataset = Dataset(limit=None)
-    # dec_gen = dataset.generate_dec_batch(batch_size=32)
-    # for item in dec_gen:
-    #     pass
-    ################################################################################################
-    # test the input reader
-    #
-    ################################################################################################
-    # sequence input work
-    # token_ids = fluid.layers.data(name="token_ids", shape=[None, SEQ_MAX_LEN], dtype='int64')
-    # segment_ids = fluid.layers.data(name="segment_ids", shape=[None, SEQ_MAX_LEN], dtype='int64')
-    # pos_ids = fluid.layers.data(name="pos_ids", shape=[None, SEQ_MAX_LEN], dtype='int64')
-    # input_length = fluid.layers.data(name='input_length', shape=[None, SEQ_MAX_LEN, 1], dtype='int64')
-    #
-    # # task work
-    # goal_type_pos = fluid.layers.data(name="goal_type_pos", shape=[None, 2], dtype='int64')
-    # goal_entity_pos = fluid.layers.data(name="goal_entity_pos", shape=[None, 2], dtype='int64')
-    # knowledge_s_pos = fluid.layers.data(name="knowledge_s_pos", shape=[None, 2], dtype='int64')
-    # knowledge_p_pos = fluid.layers.data(name="knowledge_p_pos", shape=[None, 2], dtype='int64')
-    #
-    # # task label
-    # goal_type_label = fluid.layers.data(name="goal_type_label", shape=[None], dtype='int64')
-    # goal_entity_label = fluid.layers.data(name="goal_entity_label", shape=[None], dtype='int64')
-    # knowledge_s_label = fluid.layers.data(name="knowledge_s_label", shape=[None], dtype='int64')
-    # knowledge_p_label = fluid.layers.data(name="knowledge_p_label", shape=[None], dtype='int64')
-    #
-    #
-    # # data_loader
-    # ITERABLE = True
-    # BATCH_SIZE =32
-    #
-    # feed_list = [token_ids, segment_ids, pos_ids, input_length,
-    #              goal_type_pos, goal_entity_pos,knowledge_s_pos,knowledge_p_pos,
-    #              goal_type_label, goal_entity_label,knowledge_s_label,knowledge_p_label]
-    #
-    # places = fluid.CPUPlace()
-    # data_loader = fluid.io.DataLoader.from_generator(feed_list=feed_list, capacity=10, iterable=ITERABLE)
-    # data_loader.set_batch_generator(dataset.generate_enc_batch(batch_size=BATCH_SIZE), places=places)
-
-    # exe = fluid.Executor(fluid.CPUPlace())
-    # a = np.array([np.nan])
-    # b = np.array([1], dtype=np.int64)
-    # res = exe.run(fluid.default_main_program(), feed={"knowledge_p_label":a,"knowledge_s_label":b}, fetch_list=[res])

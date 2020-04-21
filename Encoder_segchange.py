@@ -20,88 +20,61 @@ from functools import partial
 
 from transformer_encoder import encoder
 from batch_generator import Dataset
-from utils import set_base, log, json_saver, read_json, find_name_dec, find_name_enc
+from utils import set_base, log
 
 #####################################################
-# Model Parameter
+# 参数部分
+# 参数部分
 HIDDEN_SIZE = 768
 NUM_HIDDEN_LAYERS = 6
 NUM_ATTENTION_HEADS = 6
 VOCAB_SIZE = 15416
 MAX_POSITION_EMBEDDINGS = 512
-TYPE_VOCAB_SIZE = 47
+TYPE_VOCAB_SIZE = 60
 HIDDEN_ACT = 'relu'
 HIDDEN_DROPOUT_PROB = 0.
 ATTENTION_PROBS_DROPOUT_PROB = 0.
 GOAL_TYPE_NUM = 39
 GOAL_ENTITY_NUM = 656
 KNOWLEDGE_S_NUM = 656
-KNOWLEDGE_P_NUM = 56
+KNOWLEDGE_P_NUM = 57
 SEQ_MAX_LEN = 512
 ###########################################################################
 # Train Parameters
-BATCH_SIZE = 1
-EPOCH_NUM = 100
+SEQ_MAX_LEN = 12
+BATCH_SIZE = 64
+EPOCH_NUM = 5
 PRINT_BATCH = 10
 SAVE_BATCH = 100
-LOAD_PERSISTABLE = False
-LOAD_PERSISTABLE_FILE = "dec_model_epoch_5_batch_200.pers"
-LOAD_VARS = False
-LOAD_VARS_FILE = "dec_model_epoch_4_batch_0.vars"
+LOAD_PERSISTABLE = True
+LOAD_PERSISTABLE_FILE = "enc_model_epoch_4_batch_3100.pers"
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
-LIMIT = 10
-USE_CUDA = False
-
-def check_params(dataset:Dataset):
-    params = dataset.get_params()
-    assert VOCAB_SIZE == params["VOCAB_SIZE"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("VOCAB_SIZE", params["VOCAB_SIZE"], VOCAB_SIZE)
-    assert GOAL_TYPE_NUM == params["GOAL_TYPE_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("GOAL_TYPE_NUM", params["GOAL_TYPE_NUM"], GOAL_TYPE_NUM)
-    assert GOAL_ENTITY_NUM == params["GOAL_ENTITY_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("GOAL_ENTITY_NUM", params["GOAL_ENTITY_NUM"], GOAL_ENTITY_NUM)
-    assert KNOWLEDGE_S_NUM == params["KNOWLEDGE_S_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("KNOWLEDGE_S_NUM", params["KNOWLEDGE_S_NUM"], KNOWLEDGE_S_NUM)
-    assert KNOWLEDGE_P_NUM == params["KNOWLEDGE_P_NUM"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("KNOWLEDGE_P_NUM", params["KNOWLEDGE_P_NUM"], KNOWLEDGE_P_NUM)
-    assert TYPE_VOCAB_SIZE == params["TYPE_VOCAB_SIZE"], "Parameter Error, %s shoud be %d , but it is %d. Please cheak!"%\
-                                               ("TYPE_VOCAB_SIZE", params["TYPE_VOCAB_SIZE"], TYPE_VOCAB_SIZE)
-    check_info = "Parameter checked."
-    print(check_info)
-    return check_info
+LIMIT = None
+USE_CUDA = True
 
 #####################################################
-class Model_Config():
-    def __init__(self, filename=None):
-        if not filename:
-            self.config = {
-                "HIDDEN_SIZE":HIDDEN_SIZE,
-                "NUM_HIDDEN_LAYERS" :NUM_HIDDEN_LAYERS,
-                "NUM_ATTENTION_HEADS" :NUM_ATTENTION_HEADS,
-                "VOCAB_SIZE" :VOCAB_SIZE,
-                "MAX_POSITION_EMBEDDINGS" :MAX_POSITION_EMBEDDINGS,
-                "TYPE_VOCAB_SIZE" :TYPE_VOCAB_SIZE,
-                "HIDDEN_ACT" :HIDDEN_ACT,
-                "HIDDEN_DROPOUT_PROB" :HIDDEN_DROPOUT_PROB,
-                "ATTENTION_PROBS_DROPOUT_PROB" :ATTENTION_PROBS_DROPOUT_PROB,
-                "GOAL_TYPE_NUM" :GOAL_TYPE_NUM,
-                "GOAL_ENTITY_NUM" :GOAL_ENTITY_NUM,
-                "KNOWLEDGE_S_NUM" :KNOWLEDGE_S_NUM,
-                "KNOWLEDGE_P_NUM" :KNOWLEDGE_P_NUM,
-                "SEQ_MAX_LEN" :SEQ_MAX_LEN
-            }
+class ErnieConfig(object):
+    def __init__(self, config_path):  # config path为json的
+        self._config_dict = self._parse(config_path)
+
+    def _parse(self, config_path):
+        try:
+            with open(config_path, 'r', encoding='utf8') as json_file:
+                config_dict = json.load(json_file)
+        except Exception:
+            raise IOError("Error in parsing Ernie model config file '%s'" %
+                          config_path)
         else:
-            self.config = self._read(filename)
+            return config_dict
 
     def __getitem__(self, key):
-        return self.config[key]
+        return self._config_dict[key]
 
-    def _read(self, filename):
-        return read_json(filename)
-
-    def save(self,filename):
-        json_saver(self.config, filename)
+    def print_config(self):
+        for arg, value in sorted(six.iteritems(self._config_dict)):
+            log.info('%s: %s' % (arg, value))
+        log.info('------------------------------------------------')
 
 
 class Encoder(object):
@@ -110,40 +83,34 @@ class Encoder(object):
                  position_ids,
                  sentence_ids,
                  input_mask,
-                 config:Model_Config,
+                 # config,
                  weight_sharing=True,
                  use_fp16=False):
-        self._emb_size = config["HIDDEN_SIZE"]
-        self._n_layer =config["NUM_HIDDEN_LAYERS"]
-        self._n_head =config["NUM_ATTENTION_HEADS"]
-        self._voc_size = config["VOCAB_SIZE"]
-        self._max_position_seq_len = config["MAX_POSITION_EMBEDDINGS"]
-        self._sent_types = config["TYPE_VOCAB_SIZE"]
-        self._hidden_act = config['HIDDEN_ACT']
-        self._prepostprocess_dropout = config["HIDDEN_DROPOUT_PROB"]
-        self._attention_dropout = config["ATTENTION_PROBS_DROPOUT_PROB"]
+        self._emb_size = HIDDEN_SIZE
+        self._n_layer = NUM_HIDDEN_LAYERS
+        self._n_head = NUM_ATTENTION_HEADS
+        self._voc_size = VOCAB_SIZE
+        self._max_position_seq_len = MAX_POSITION_EMBEDDINGS
+        self._sent_types = TYPE_VOCAB_SIZE
+        self._hidden_act = HIDDEN_ACT
+        self._prepostprocess_dropout = HIDDEN_DROPOUT_PROB
+        self._attention_dropout = ATTENTION_PROBS_DROPOUT_PROB
         self._weight_sharing = weight_sharing
-        # name
-        self.encoder_name = "encoder"
+
         self._word_emb_name = "enc_word_embedding"
         self._pos_emb_name = "enc_pos_embedding"
         self._seg_emb_name = "enc_seg_embedding"
 
-        self._dtype = "float32"
-        self._inttype = 'int32'
+        self._dtype = "float64"
+
         # task parameters
-        self.goal_type_num = config["GOAL_TYPE_NUM"]
-        self.goal_entity_num = config["GOAL_ENTITY_NUM"]
-        self.knowledge_s_num = config["KNOWLEDGE_S_NUM"]
-        self.knowledge_p_num = config["KNOWLEDGE_P_NUM"]
+        self.goal_type_num = GOAL_TYPE_NUM
+        self.goal_entity_num = GOAL_ENTITY_NUM
+        self.knowledge_s_num = KNOWLEDGE_S_NUM
+        self.knowledge_p_num = KNOWLEDGE_P_NUM
 
         # self._param_initializer = fluid.initializer.TruncatedNormal(
         #     scale=config['initializer_range'])
-
-        # parameter
-        self.pos_embed = Dataset.get_position_embed(SEQ_MAX_LEN, HIDDEN_SIZE)
-
-
         self._build_model(src_ids, position_ids,
                           sentence_ids, input_mask)
 
@@ -213,7 +180,7 @@ class Encoder(object):
             preprocess_cmd="",
             postprocess_cmd="dan",
             # param_initializer=self._param_initializer,
-            name=self.encoder_name )
+            name='encoder')
 
     def get_sequence_output(self):
         return self._enc_out
@@ -397,19 +364,20 @@ if __name__ == '__main__':
 
     # logging tools
     tgt_base_dir = set_base(__file__)
-    # LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
-    # DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
+    LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
+    DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
     log_filename = os.path.join(tgt_base_dir, "enc_pre_training.log")
     logger = log(log_filename)
-    config = Model_Config()
 
+    start_time = time.time()
+    recoder = time.time()
 
     ###########################################################################
-    # create program
+    # 创建预测的main_program和startup_program
     train_prog = fluid.Program()
     train_startup = fluid.Program()
 
-    # define the network
+    # 定义预测网络
     with fluid.program_guard(train_prog, train_startup):
 
         token_ids = fluid.layers.data(name="token_ids", shape=[None, SEQ_MAX_LEN], dtype='int64')
@@ -440,7 +408,7 @@ if __name__ == '__main__':
             'knowledge_p_label': knowledge_p_label
         }
 
-        encode = Encoder(token_ids, pos_ids, segment_ids, input_length,config)
+        encode = Encoder(token_ids, pos_ids, segment_ids, input_length)
         output = encode.get_sequence_output()
         loss, mean_mesure = encode.get_pretrain_output(pretrian_data)
         adam = fluid.optimizer.AdamOptimizer()
@@ -449,11 +417,9 @@ if __name__ == '__main__':
     place = fluid.CUDAPlace(0) if USE_CUDA else fluid.CPUPlace()
     exe = fluid.Executor(place)
     data = Dataset(limit=LIMIT)
-    check_info = check_params(data)
-    logger.info(check_info)
 
-    # startup the program
-    exe.run(train_startup)
+    logger.info("Begin trainning")
+    print("Begin trainning")
 
     if LOAD_PERSISTABLE:
         try:
@@ -471,25 +437,9 @@ if __name__ == '__main__':
             exe.run(train_startup)
 
             print(load_error)
+    else:
+        exe.run(train_startup)
 
-    # load the model if we have
-    if LOAD_VARS:
-        try:
-            print("begin to load %s" % (LOAD_VARS_FILE))
-            fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_VARS_FILE,
-                               predicate=find_name_enc)
-
-            info_msg = "Load %s success!" % (LOAD_VARS_FILE)
-            logger.info(info_msg)
-            print(info_msg)
-        except:
-            load_error = "the vars model cannot be loaded."
-            logger.error(load_error)
-
-    logger.info("Begin trainning")
-    print("Begin trainning")
-    start_time = time.time()
-    recoder = time.time()
     for epoch_id in range(EPOCH_NUM):
         data_gen = data.generate_enc_batch(batch_size=BATCH_SIZE)
         for batch_id, item in enumerate(data_gen):

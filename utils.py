@@ -146,6 +146,9 @@ def json_saver(obj, filename):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(obj, f)
 
+
+
+
 @time_clock
 def read_train_data(filename) :
     """
@@ -207,6 +210,15 @@ class Clock():
 
     def __init__(self):
         time.time()
+
+def find_name_enc(var):
+    res ="encoder" in var.name and vars.persistable is True
+    return res
+
+def find_name_dec(var):
+    res ="decoder" in var.name and vars.persistable is True
+    return res
+
 
 if __name__ == '__main__':
     res = hello_word()
