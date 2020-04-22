@@ -213,40 +213,7 @@ class Clock():
 
     def __init__(self):
         time.time()
-def is_persistable(var):
-    """
-    Check whether the given variable is persistable.
 
-    Args:
-        var(Variable): The variable to be checked.
-
-    Returns:
-        bool: True if the given `var` is persistable
-        False if not.
-
-    Examples:
-        .. code-block:: python
-
-            import paddle.fluid as fluid
-            param = fluid.default_main_program().global_block().var('fc.b')
-            res = fluid.io.is_persistable(param)
-    """
-    if var.desc.type() == core.VarDesc.VarType.FEED_MINIBATCH or \
-            var.desc.type() == core.VarDesc.VarType.FETCH_LIST or \
-            var.desc.type() == core.VarDesc.VarType.READER:
-        return False
-    return var.persistable
-
-
-def find_name_enc(var):
-    res ="encoder" in var.name and var.persistable is True and\
-         isinstance(var, fluid.framework.Parameter)
-    return res
-
-def find_name_dec(var):
-    res ="decoder" in var.name and var.persistable is True and\
-         isinstance(var, fluid.framework.Parameter)
-    return res
 
 def save_model(filename, param_name_list, opt_var_name_list, name=''):
     save_model_file = os.path.join(filename, name + "model_stage_0")
@@ -277,6 +244,7 @@ def load_model(model_init_file, param_name_list, place, opt_state_init_file='',d
         raise Exception("load init model failed")
 
     print("load init model")
+    loading_msg = []
     for name in param_name_list:
         try:
             t = fluid.global_scope().find_var(name).get_tensor()
@@ -284,11 +252,11 @@ def load_model(model_init_file, param_name_list, place, opt_state_init_file='',d
             if load_param.shape == np.asarray(t).shape:
                 t.set(load_param.astype(datatype), place)
         except AttributeError as e:
-            print(str(e) + "%s exist not in this model and cannot be load!"%name)
+            loading_msg.append(str(e) + "%s exist not in this model and cannot be load!"%name)
         except KeyError as e:
-            print(str(e) + "%s exist not in this model and cannot be load!"%name)
+            loading_msg.append(str(e) + "%s exist not in this model and cannot be load!"%name)
 
-
+    return loading_msg
 
     # load opt state
     if opt_state_init_file != "":
