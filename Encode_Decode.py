@@ -23,7 +23,7 @@ from functools import partial
 
 from transformer_encoder import encoder, decoder
 from batch_generator import Dataset
-from utils import set_base, log, read_json, json_saver, find_name_enc, find_name_dec
+from utils import *
 from Encoder import Encoder
 from Decoder import Decoder
 #####################################################
@@ -40,11 +40,11 @@ ATTENTION_PROBS_DROPOUT_PROB = 0.
 GOAL_TYPE_NUM = 39
 GOAL_ENTITY_NUM = 656
 KNOWLEDGE_S_NUM = 656
-KNOWLEDGE_P_NUM = 56
+KNOWLEDGE_P_NUM = 33
 SEQ_MAX_LEN = 512
 ###########################################################################
 # Train Parameters
-BATCH_SIZE = 32
+BATCH_SIZE = 1
 EPOCH_NUM = 100
 PRINT_BATCH = 10
 SAVE_BATCH = 100
@@ -53,11 +53,11 @@ LOAD_PERSISTABLE_FILE = "trm_model_epoch_4_batch_0.pers"
 LOAD_VARS = False
 LOAD_VARS_FILE = "trm_model_epoch_4_batch_0.vars"
 LOAD_SEP = True
-LOAD_ENCODER_FILE = "enc_model_epoch_1_batch_0.vars"
-LOAD_DECODER_FILE = "dec_model_epoch_4_batch_1300.vars"
+LOAD_ENCODER_FILE = "enc_model_epoch_0_batch_0model_stage_0.npz"
+LOAD_DECODER_FILE = "dec_model_epoch_0_batch_0model_stage_0.npz"
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
-LIMIT = 10
+LIMIT = 12
 USE_CUDA = False
 
 
@@ -232,7 +232,9 @@ if __name__ == '__main__':
 
     # start up parameter
     exe.run(startup_prog)
-    dataset = Dataset(limit=LIMIT)
+    params_list = train_prog.block(0).all_parameters()
+    params_name_list = [p.name for p in params_list]
+    write_iterable("enc_dec_params.param", params_name_list)
 
     # load the model if we have
     if LOAD_PERSISTABLE:
@@ -265,20 +267,36 @@ if __name__ == '__main__':
     # load encoder and decoder seperately
     if LOAD_SEP:
         try:
-            print("begin to load %s" % (LOAD_VARS_FILE))
-            fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_ENCODER_FILE,
-                               predicate=find_name_enc)
-            fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_DECODER_FILE,
-                               predicate=find_name_dec)
-
-            info_msg = "Load %s success!" % (LOAD_VARS_FILE)
+            enc_model_file = os.path.join(tgt_base_dir, LOAD_ENCODER_FILE)
+            dec_model_file = os.path.join(tgt_base_dir, LOAD_DECODER_FILE)
+            print("begin to load %s" % (LOAD_ENCODER_FILE))
+            load_model(enc_model_file, params_name_list, place)
+            info_msg = "Load %s success!" % (LOAD_ENCODER_FILE)
             logger.info(info_msg)
             print(info_msg)
+
+            print("begin to load %s" % (LOAD_DECODER_FILE))
+            load_model(dec_model_file, params_name_list, place)
+            info_msg = "Load %s success!" % (LOAD_DECODER_FILE)
+            logger.info(info_msg)
+            print(info_msg)
+
+
         except:
-            load_error = "the vars model cannot be loaded."
+            load_error = "the model params cannot be loaded."
             logger.error(load_error)
 
+
+        print("begin to load %s" % (LOAD_VARS_FILE))
+
+
+        info_msg = "Load %s success!" % (LOAD_VARS_FILE)
+        logger.info(info_msg)
+        print(info_msg)
+
+
     # show the information
+    dataset = Dataset(limit=LIMIT)
     check_params(dataset)
 
     # clock and message

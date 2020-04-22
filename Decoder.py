@@ -20,8 +20,7 @@ from functools import partial
 
 from transformer_encoder import decoder
 from batch_generator import Dataset
-from utils import set_base, log, read_json, json_saver,find_name_enc, find_name_dec
-
+from utils import *
 #################################################################################
 # Model Parameter
 HIDDEN_SIZE = 768
@@ -36,18 +35,22 @@ ATTENTION_PROBS_DROPOUT_PROB = 0.
 GOAL_TYPE_NUM = 39
 GOAL_ENTITY_NUM = 656
 KNOWLEDGE_S_NUM = 656
-KNOWLEDGE_P_NUM = 56
+KNOWLEDGE_P_NUM = 33
 SEQ_MAX_LEN = 512
 #################################################################################
 # Train Parameters
 BATCH_SIZE = 1
-EPOCH_NUM = 5
+EPOCH_NUM = 10
 PRINT_BATCH = 10
 SAVE_BATCH = 100
 LOAD_PERSISTABLE = False
 LOAD_PERSISTABLE_FILE = "dec_model_epoch_4_batch_900.pers"
 LOAD_VARS = False
 LOAD_VARS_FILE = "dec_model_epoch_4_batch_1300.vars"
+LOAD_MODEL = False
+LOAD_MODEL_FILE = "dec_model_epoch_0_batch_0model_stage_0.npz"
+LOAD_OPT = False
+LOAD_OPTL_FILE = "dec_model_epoch_0_batch_0opt_state_stage_0.npz"
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
 LIMIT = 10
@@ -55,8 +58,6 @@ USE_CUDA = False
 
 
 ###########################################################################
-
-
 class Model_Config():
     def __init__(self, filename=None):
         if not filename:
@@ -356,7 +357,10 @@ def fine_tunning():
 
     # start up parameter
     exe.run(startup_prog)
-    dataset = Dataset(limit=LIMIT)
+    params_list = train_prog.block(0).all_parameters()
+    params_name_list = [p.name for p in params_list]
+    write_iterable("decoder_params.param", params_name_list)
+
 
     # load the model if we have
     if LOAD_PERSISTABLE:
@@ -373,12 +377,12 @@ def fine_tunning():
             logger.error(load_error)
 
     # load the model if we have
-    if LOAD_VARS:
+    if LOAD_MODEL:
         try:
-            print("begin to load %s"% (LOAD_VARS_FILE))
-            fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_VARS_FILE,
-                                   predicate=find_name_dec)
+            model_file = os.path.join(tgt_base_dir, LOAD_MODEL_FILE)
+            print("begin to load %s" % (LOAD_OPTL_FILE))
 
+            load_model(model_file, params_name_list, place, opt_state_init_file=LOAD_OPTL_FILE if LOAD_OPT else "")
             info_msg = "Load %s success!" % (LOAD_VARS_FILE)
             logger.info(info_msg)
             print(info_msg)
@@ -387,6 +391,7 @@ def fine_tunning():
             logger.error(load_error)
 
     # show the information
+    dataset = Dataset(limit=LIMIT)
     check_params(dataset)
 
     start_time = time.time()
@@ -424,6 +429,7 @@ def fine_tunning():
                 print(info_msg)
                 recoder = time.time()
 
+            # save the model
             if batch_id % SAVE_BATCH == 0:
                 save_msg = "save model at %d epoch, %d batch" % (epoch_id, batch_id)
                 model_name = "dec_model" + "_epoch_%d_batch_%d" % (epoch_id, batch_id)
@@ -432,7 +438,11 @@ def fine_tunning():
                                    predicate=lambda var: isinstance(var, fluid.framework.Parameter))
                 fluid.io.save_persistables(exe, tgt_base_dir,
                                            main_program=train_prog, filename=model_name + ".pers")
+                # save the model
+                opt_var_name_list = adam.get_opti_var_name_list()
+                save_model_info_msg = save_model(tgt_base_dir, param_name_list=params_name_list,opt_var_name_list=opt_var_name_list, name=model_name)
 
+                logger.info(save_msg+save_model_info_msg)
                 if len(os.listdir(tgt_base_dir)) > MAX_SAVE:
                     file_list = [
                         (os.path.join(tgt_base_dir, item), os.path.getmtime(os.path.join(tgt_base_dir, item)))

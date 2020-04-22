@@ -41,17 +41,17 @@ SEQ_MAX_LEN = 512
 #################################################################################
 # Train Parameters
 SEQ_MAX_LEN = 512
-BATCH_SIZE = 32
+BATCH_SIZE = 1
 EPOCH_NUM = 100
 PRINT_BATCH = 10
 SAVE_BATCH = 100
 LOAD_PERSISTABLE = False
 LOAD_PERSISTABLE_FILE = "dec_model_epoch_5_batch_200.pers"
 LOAD_VARS = False
-LOAD_VARS_FILE = "dec_model_epoch_4_batch_0.vars"
+LOAD_VARS_FILE = "dec_model_epoch_0_batch_0.vars"
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
-LIMIT = 10
+LIMIT = 13
 USE_CUDA = False
 
 def check_params(dataset:Dataset):
@@ -309,8 +309,9 @@ class Decoder(object):
 
 
 
+if __name__ == '__main__':
 
-def fine_tunning():
+
     ###########################################################################
     # logging tools
     tgt_base_dir = set_base(__file__)
@@ -443,5 +444,5 @@ def fine_tunning():
                     logger.info(del_msg)
 
 
-if __name__ == '__main__':
-    fine_tunning()
+# if __name__ == '__main__':
+#     fine_tunning()

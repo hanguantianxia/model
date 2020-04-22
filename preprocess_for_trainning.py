@@ -393,8 +393,17 @@ def preprocess_knowledge(knowledge):
             tmp_split = kg[2].split('。')
             for tmp_str_item in tmp_split:
                 if tmp_str_item.strip() != '':
-                    new_kg = [kg[0], kg[1], tmp_str_item + '。']
+                    key = kg[1]
+                    s = kg[0]
+                    if kg[1].find("评论") != -1 and len(kg[1].split())!=1:
+                        origin_key = kg[1].split()
+                        key = origin_key[-1]
+                        s += ' '.join(key[:-1])
+
+                    new_kg = [s, key, tmp_str_item + '。']
                     new_knowledge.append(new_kg)
+
+
 
         elif len(kg[1].split()) == 1 or kg[1] == '喜欢 的 新闻':
             if kg[1].startswith('2018'):
@@ -428,6 +437,7 @@ if __name__ == '__main__':
     usr_profile_keys_set = set()
     entities_set = set()
     goal_type_list = list()
+    p_dict = set()
 
     f_log = open(log_file, 'w', encoding='utf-8')
 
@@ -442,6 +452,8 @@ if __name__ == '__main__':
             usr_prof = preprocess_usr_profile(usr_prof)
             # process knowledge
             knowledge = preprocess_knowledge(knowledge)
+            for item in knowledge:
+                p_dict.add(item[1])
 
 
             # compute all user profile keys

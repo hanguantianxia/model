@@ -20,7 +20,7 @@ from functools import partial
 
 from transformer_encoder import encoder
 from batch_generator import Dataset
-from utils import set_base, log, json_saver, read_json, find_name_dec, find_name_enc
+from utils import *
 
 #####################################################
 # Model Parameter
@@ -36,22 +36,27 @@ ATTENTION_PROBS_DROPOUT_PROB = 0.
 GOAL_TYPE_NUM = 39
 GOAL_ENTITY_NUM = 656
 KNOWLEDGE_S_NUM = 656
-KNOWLEDGE_P_NUM = 56
+KNOWLEDGE_P_NUM = 33
 SEQ_MAX_LEN = 512
 ###########################################################################
 # Train Parameters
 BATCH_SIZE = 1
-EPOCH_NUM = 100
+EPOCH_NUM = 10
 PRINT_BATCH = 10
 SAVE_BATCH = 100
 LOAD_PERSISTABLE = False
 LOAD_PERSISTABLE_FILE = "dec_model_epoch_5_batch_200.pers"
 LOAD_VARS = False
 LOAD_VARS_FILE = "dec_model_epoch_4_batch_0.vars"
+LOAD_MODEL = True
+LOAD_MODEL_FILE = "enc_model_epoch_0_batch_0model_stage_0.npz"
+LOAD_OPT = False
+LOAD_OPT_FILE = "enc_model_epoch_0_batch_0opt_state_stage_0.npz"
+
 TRAIN_STAT_PATH = "training_msg.json"
 MAX_SAVE = 12
 LIMIT = 10
-USE_CUDA = False
+USE_CUDA = None
 
 def check_params(dataset:Dataset):
     params = dataset.get_params()
@@ -451,7 +456,9 @@ if __name__ == '__main__':
     data = Dataset(limit=LIMIT)
     check_info = check_params(data)
     logger.info(check_info)
-
+    params_list = train_prog.block(0).all_parameters()
+    params_name_list = [p.name for p in params_list]
+    write_iterable("encoder_params.param",params_name_list)
     # startup the program
     exe.run(train_startup)
 
@@ -476,8 +483,8 @@ if __name__ == '__main__':
     if LOAD_VARS:
         try:
             print("begin to load %s" % (LOAD_VARS_FILE))
-            fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_VARS_FILE,
-                               predicate=find_name_enc)
+            # fluid.io.load_vars(exe, tgt_base_dir, main_program=train_prog, filename=LOAD_VARS_FILE,
+            #                    predicate=find_name_enc)
 
             info_msg = "Load %s success!" % (LOAD_VARS_FILE)
             logger.info(info_msg)
@@ -485,6 +492,23 @@ if __name__ == '__main__':
         except:
             load_error = "the vars model cannot be loaded."
             logger.error(load_error)
+
+    # load the model if we have
+    if LOAD_MODEL:
+        try:
+            model_file = os.path.join(tgt_base_dir, LOAD_MODEL_FILE)
+            opt_file = os.path.join(tgt_base_dir, LOAD_OPT_FILE)
+            print("begin to load %s" % (LOAD_OPT_FILE))
+
+            load_model(model_file, params_name_list, place, opt_state_init_file=opt_file if LOAD_OPT else "")
+            info_msg = "Load %s success!" % (LOAD_OPT_FILE)
+            logger.info(info_msg)
+            print(info_msg)
+        except:
+            load_error = "the model params cannot be loaded."
+            logger.error(load_error)
+
+
 
     logger.info("Begin trainning")
     print("Begin trainning")
@@ -532,12 +556,17 @@ if __name__ == '__main__':
                 fluid.io.save_persistables(exe, tgt_base_dir,
                                            main_program=train_prog, filename=model_name + ".pers")
 
+                opt_var_name_list = adam.get_opti_var_name_list()
+                save_model_info_msg = save_model(tgt_base_dir, param_name_list=params_name_list,opt_var_name_list=opt_var_name_list, name=model_name)
+                logger.info(save_msg+save_model_info_msg)
+
                 if len(os.listdir(tgt_base_dir)) > MAX_SAVE:
                     file_list = [(os.path.join(tgt_base_dir, item), os.path.getmtime(os.path.join(tgt_base_dir, item)))
                                  for item in os.listdir(tgt_base_dir)]
                     delete_file = sorted(file_list, key=lambda x: x[1], reverse=False)
                     os.remove(delete_file[0][0])
                     os.remove(delete_file[1][0])
+                    os.remove(delete_file[2][0])
 
                     del_msg = "delete the model file %s." % (delete_file)
                     logger.info(del_msg)

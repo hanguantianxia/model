@@ -9,20 +9,20 @@ Segment_tpye = [
 "date", "workday", "time", "location", "theme",     # situation                  # goal_seq
 "current_goal",                                     # current goal
 "user", "bot",                                      # conversation role
- 'active poi',                                      # usr profile
- 'active news',
- 'active star',
- 'active movie',
- 'active food',
- 'active music',
- 'negative movie',
- 'negative music',
- 'name',
- 'addr',
- 'age',
- 'sex',
- 'reject',
- 'profession',
+ # 'active poi',                                      # usr profile
+ # 'active news',
+ # 'active star',
+ # 'active movie',
+ # 'active food',
+ # 'active music',
+ # 'negative movie',
+ # 'negative music',
+ # 'name',
+ # 'addr',
+ # 'age',
+ # 'sex',
+ # 'reject',
+ # 'profession',
 'active 兴趣点',
  'active 新闻',
  'active 明星',
@@ -95,7 +95,7 @@ def get_dict(file_path):
     p_word_dict["[UNK]"] = len(p_word_dict)
 
     for idx, word in enumerate(spo_p_words):
-        p_word_dict[word] = idx
+        p_word_dict[word] = len(p_word_dict)
 
     goal_type_dict = dict()
     goal_type_dict["[UNK]"] = len(goal_type_dict)
@@ -147,7 +147,16 @@ if __name__ == "__main__":
     entities_dict = get_entities_dict()
     conv_word_dict = merge_vocab(conv_word_dict, entities_dict)
 
+    Segment_dict = {"[PAD]":0,"[UNK]":1}
 
+    for idx, item in enumerate(Segment_tpye):
+        Segment_dict[item] = len(Segment_dict)
+
+    for i in range(10):
+        Segment_dict["goal_type"+str(i)] = len(Segment_dict)
+        Segment_dict["goal_entity"+str(i)] = len(Segment_dict)
+
+    file_saver("./work/Segment_dict.json", Segment_dict)
     file_saver("work/conv_word_dict.txt", conv_word_dict)
     file_saver("work/p_word_dict.txt", p_word_dict)
     file_saver("work/goal_type_dict.txt", goal_type_dict)

@@ -3,8 +3,11 @@ import re
 import os
 import time
 import logging
-
 from collections import namedtuple
+
+from paddle.fluid import core
+import paddle.fluid as fluid
+import numpy as np
 
 Doc = namedtuple("Document", ("id", "title", "content"))
 SegDoc = namedtuple("Seg_Document",("id", "title", "content", "seg_content"))
@@ -210,14 +213,99 @@ class Clock():
 
     def __init__(self):
         time.time()
+def is_persistable(var):
+    """
+    Check whether the given variable is persistable.
+
+    Args:
+        var(Variable): The variable to be checked.
+
+    Returns:
+        bool: True if the given `var` is persistable
+        False if not.
+
+    Examples:
+        .. code-block:: python
+
+            import paddle.fluid as fluid
+            param = fluid.default_main_program().global_block().var('fc.b')
+            res = fluid.io.is_persistable(param)
+    """
+    if var.desc.type() == core.VarDesc.VarType.FEED_MINIBATCH or \
+            var.desc.type() == core.VarDesc.VarType.FETCH_LIST or \
+            var.desc.type() == core.VarDesc.VarType.READER:
+        return False
+    return var.persistable
+
 
 def find_name_enc(var):
-    res ="encoder" in var.name and vars.persistable is True
+    res ="encoder" in var.name and var.persistable is True and\
+         isinstance(var, fluid.framework.Parameter)
     return res
 
 def find_name_dec(var):
-    res ="decoder" in var.name and vars.persistable is True
+    res ="decoder" in var.name and var.persistable is True and\
+         isinstance(var, fluid.framework.Parameter)
     return res
+
+def save_model(filename, param_name_list, opt_var_name_list, name=''):
+    save_model_file = os.path.join(filename, name + "model_stage_0")
+    save_opt_state_file = os.path.join(filename, name + "opt_state_stage_0")
+
+
+    model_stage_0 = {}
+    for name in param_name_list:
+        t = np.asarray(fluid.global_scope().find_var(name).get_tensor())
+        model_stage_0[name] = t
+    np.savez(save_model_file, **model_stage_0)
+
+    opt_state_stage_0 = {}
+    for name in opt_var_name_list:
+        t_data = np.asarray(fluid.global_scope().find_var(name).get_tensor())
+        opt_state_stage_0[name] = t_data
+    np.savez(save_opt_state_file, **opt_state_stage_0)
+    info_msg = "Finish saving the parameter. "
+    return info_msg
+
+def load_model(model_init_file, param_name_list, place, opt_state_init_file='',datatype='float32'):
+    """ init model """
+
+    try:
+        model_init = np.load(model_init_file)
+    except:
+        print("load init model failed", model_init_file)
+        raise Exception("load init model failed")
+
+    print("load init model")
+    for name in param_name_list:
+        try:
+            t = fluid.global_scope().find_var(name).get_tensor()
+            load_param = model_init[str(name)]
+            if load_param.shape == np.asarray(t).shape:
+                t.set(load_param.astype(datatype), place)
+        except AttributeError as e:
+            print(str(e) + "%s exist not in this model and cannot be load!"%name)
+        except KeyError as e:
+            print(str(e) + "%s exist not in this model and cannot be load!"%name)
+
+
+
+    # load opt state
+    if opt_state_init_file != "":
+        print("begin to load opt state")
+        opt_state_data = np.load(opt_state_init_file)
+        for k, v in opt_state_data.items():
+            t = fluid.global_scope().find_var(str(k)).get_tensor()
+            t.set(v, place)
+        print("set opt state finished")
+
+    print("init model parameters finshed")
+
+def write_iterable(filename, iterable_obj):
+    with open(filename, 'w', encoding='utf8') as f:
+        for i in iterable_obj:
+            f.write(str(i)+'\n')
+
 
 
 if __name__ == '__main__':
